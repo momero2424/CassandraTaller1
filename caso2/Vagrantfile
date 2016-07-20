@@ -1,0 +1,64 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+
+#
+# Requiere de guest additions
+# vagrant plugin isntall vagrant-vbguest
+#
+
+Vagrant.configure("2") do |config|
+  
+  $total_nodes = 2
+  $hosts = ""
+  $ip_extra = 24
+  # Le sumo un numero pues la fisica tiene asignada la 5.5.5.1 y la 5.5.5.0 es el identificador de red
+  for j in 0..$total_nodes
+    $hosts << "5.5.5.#{j + $ip_extra} cas#{j}.datum.com.gt\n"
+  end
+  
+  (0..$total_nodes).each do |i|
+    config.vm.define "cas#{i}" do |nodo|
+      nodo.vm.box = "centos-7.0-x86_64"
+
+      nodo.vm.provider "virtualbox" do |vb|
+        # Display the VirtualBox GUI when booting the machine
+        vb.gui = false
+        # Customize the amount of memory on the VM:
+        vb.memory = 1024
+        vb.cpus = 1
+      end
+
+      nodo.vm.network 'private_network', ip: "5.5.5.#{i + $ip_extra}"
+      nodo.vm.hostname = "cas#{i}.datum.com.gt"
+      nodo.vm.network "forwarded_port", guest: 9042, host: 9001 + i
+
+      nodo.vm.provision "shell", inline: <<-SHELL
+        echo "Actualizando repositorios"
+        yum list >/dev/null 2>&1
+        echo "Instalando puppet"
+        yum install -y puppet >/dev/null 2>&1
+        echo "Instalando plugins de puppet necesarios"
+        puppet module install puppetlabs-stdlib
+      SHELL
+
+      # Puppet se encarga de la preinstalacion de oracle
+      nodo.vm.provision :puppet do |puppet|
+        puppet.binary_path = '/usr/bin'
+        puppet.manifests_path = 'puppet'
+        #puppet.module_path = '/etc/puppet/modules/'
+        puppet.manifest_file  = 'install.pp'
+        puppet.options        = '--verbose'
+        puppet.facter = {
+          "num_nodo" => "#{i}",
+          "total_nodes" => $total_nodes,
+          "hosts" => $hosts,
+        }
+      end
+    end
+  end
+end
